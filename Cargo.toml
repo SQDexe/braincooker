@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "A Brainfuck interpreter, and compiler written in Rust"
 authors = ["SQD.exe"]
-# repository = "https://github.com/SQDexe/wgpu-practice"
+repository = "https://github.com/SQDexe/braincooker"
 readme = "README.md"
 license = "Unlicense"
 
