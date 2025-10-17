@@ -41,15 +41,15 @@ pub struct Tape<T, U> {
     array: Box<[U]>
     }
 
-impl<T: TapePointer, U: TapeCell> Default for Tape<T, U> {
+impl<T, U> Default for Tape<T, U>
+where T: TapePointer, U: TapeCell  {
     /* Default constructor method */
     fn default() -> Self {
-        /* Declaration of size, with additional assertion to halt the execution in caso of invalid pointer size */
+        /* Declaration of size, with additional assertion to halt the execution in case of invalid pointer size */
         let size = T::MAX
             .to_usize()
-            .expect("Error: Couldn't safely convert to the intended pointer size")
-            .checked_add(1)
-            .expect("Error: Couldn't create a Tape with intended size");
+            .and_then(|e| e.checked_add(1))
+            .expect("Error: Couldn't safely convert to the intended pointer size");
 
         /* Struct declaration */
         Self {
@@ -60,7 +60,8 @@ impl<T: TapePointer, U: TapeCell> Default for Tape<T, U> {
         }
     }
 
-impl<T: TapePointer, U: TapeCell> Tape<T, U> {
+impl<T, U> Tape<T, U>
+where T: TapePointer, U: TapeCell  {
     /* Helper function, for quick conversion into a pointer */
     fn ptr(&self) -> usize {
         /* Unsafe note - unwrap is safe, because it was asserted earlier */
@@ -145,7 +146,7 @@ mod test {
         }
 
     #[test]
-    fn tape_ptr_size_u8() {
+    fn tape_ptr_wrap_u8() {
         let mut tape = Tape::<u8, u8>::default();
 
         let value = 69;
@@ -158,7 +159,7 @@ mod test {
         }
 
     #[test]
-    fn tape_ptr_size_u16() {
+    fn tape_ptr_wrap_u16() {
         let mut tape = Tape::<u16, u8>::default();
 
         let value = 69;
@@ -173,7 +174,7 @@ mod test {
     /* Long running test */
     #[test]
     #[ignore]
-    fn tape_ptr_size_u32() {
+    fn tape_ptr_wrap_u32() {
         let mut tape = Tape::<u32, u8>::default();
 
         let value = 69;

@@ -1,47 +1,33 @@
 use {
-    core::{
-        num::NonZeroU16,
-        str::FromStr
-        },
+    clap::ValueEnum,
+    core::str::FromStr,
     crate::tape::*
     };
 
 
-/* Run-Length Encoding helper type */
-#[derive(PartialEq, Debug)]
-pub struct RLE<T> ( NonZeroU16, T );
-
-impl<T: Copy + Sized> RLE<T> {
-    /* Constructor function */
-    #[inline]
-    pub const fn new(count: u16, value: T) -> Self {
-        let count = NonZeroU16::new(count)
-            .expect("Error: Recieved a Zero value"); 
-        
-        Self ( count, value )
-        }
-
-    /* Getter */
-    #[inline]
-    pub const fn get(&self) -> (u16, T) {
-        let &RLE(count, value) = self;
-        
-        (count.get(), value)
-        }
+/* Value visualisation mode */
+#[derive(Clone, Copy, Default, ValueEnum)]
+pub enum DisplayMode {
+    ASCII,
+    #[default]
+    Numeric
     }
 
 
 /* Function for quick checking whether ascii can be printed */
-pub fn is_ascii_printable<T: TapeCell>(value: T) -> bool {
+pub fn is_ascii_printable<T>(value: T) -> bool
+where T: TapeCell {
     /* Try casting into an u8, only then check if it fits within the ranges */
     match value.to_u8() {
-        Some(byte) => matches!(byte, b'\t' ..= b'\n' | b' ' ..= b'~'),
+        Some(byte) =>
+            matches!(byte, b'\t' ..= b'\n' | b' ' ..= b'~'),
         _ => false
         }
     }
 
 /* Function for parsing written input buffer */
-pub fn parse_line<T: TapeCell>(buf: &str) -> Result<T, <T as FromStr>::Err> {
+pub fn parse_line<T>(buf: &str) -> Result<T, <T as FromStr>::Err>
+where T: TapeCell {
     let value = buf.trim();
 
     /* Try parsing the buffer as a char literal */
@@ -57,21 +43,6 @@ pub fn parse_line<T: TapeCell>(buf: &str) -> Result<T, <T as FromStr>::Err> {
 #[cfg(test)]
 mod test {
     use crate::utils::*;
-
-    #[test]
-    fn rle_basic() {
-        let value = RLE::new(8, true)
-            .get();
-        let other = (8, true);
-
-        assert_eq!(value, other);
-        }
-
-    #[test]
-    #[should_panic]
-    fn rle_incorrect() {
-        RLE::new(0, true);
-        }
 
     #[test]
     fn ascii_printable_numbers() {

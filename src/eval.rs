@@ -5,7 +5,7 @@ use {
         hint::unreachable_unchecked,
         ops::Index
         },
-    crate::utils::RLE,
+    crate::rle::*,
     };
 
 
@@ -49,19 +49,17 @@ pub fn eval_instr(instr_str: &str) -> Result<InstructionSet, EvalError> {
             '-' => Instruction::Decrement,
             '[' => {
                 /* Check for loop start */
-                loop_count = match loop_count.checked_add(1) {
-                    Some(count) => count,
-                    _ => return Err(EvalError::LoopOverload(i))
-                    };
+                loop_count = loop_count
+                    .checked_add(1)
+                    .ok_or(EvalError::LoopOverload(i))?;
                 
                 Instruction::LoopOpen
                 },
             ']' => {
                 /* Check for loop end */
-                loop_count = match loop_count.checked_sub(1) {
-                    Some(count) => count,
-                    _ => return Err(EvalError::UnnecesseryBracket(i))
-                    };
+                loop_count = loop_count
+                    .checked_sub(1)
+                    .ok_or(EvalError::UnnecesseryBracket(i))?;
 
                 Instruction::LoopClose
                 },
@@ -226,7 +224,7 @@ impl InstructionSet {
 
             /* Peek further, as long as it's the same Instruction, and is smaller than 0xffff */
             while let Some(&&next) = iter.peek() {
-                match curr == next && count < u16::MAX {
+                match curr == next && count < RLE::MAX {
                     /* Push main iteration further */
                     true => {
                         iter.next();
@@ -262,13 +260,6 @@ impl Index<usize> for JumpTable {
     }
 
 
-/* Container for an optimised instruction set */
-#[derive(PartialEq, Debug)]
-pub struct RLEInstructionSet (
-    Box<[RLE<Instruction>]>
-    );
-
-
 #[cfg(test)]
 mod test {
     use {
@@ -277,8 +268,7 @@ mod test {
             eval::{
                 *,
                 Instruction::*
-                },
-            utils::*
+                }
             }
         };
 
@@ -430,52 +420,5 @@ mod test {
 
         assert!(got_pruned);
         assert_eq!(instructions, pruned);
-        }
-
-    #[test]
-    fn instr_rle_basic() {
-        let instructions = eval_instr("++>+++++[<+>-]++++++++[<++++++>-]<.")
-            .expect("Unreachable")
-            .encode_run_length();
-
-        let rle = RLEInstructionSet(Box::new([
-            RLE::new(2, Increment),
-            RLE::new(1, Right),
-            RLE::new(5, Increment),
-            RLE::new(1, LoopOpen),
-            RLE::new(1, Left),
-            RLE::new(1, Increment),
-            RLE::new(1, Right),
-            RLE::new(1, Decrement),
-            RLE::new(1, LoopClose),
-            RLE::new(8, Increment),
-            RLE::new(1, LoopOpen),
-            RLE::new(1, Left),
-            RLE::new(6, Increment),
-            RLE::new(1, Right),
-            RLE::new(1, Decrement),
-            RLE::new(1, LoopClose),
-            RLE::new(1, Left),
-            RLE::new(1, Output)
-            ]));
-
-        assert_eq!(instructions, rle);
-        }
-
-    #[test]
-    fn instr_rle_many() {
-        let instr_str: String = repeat_n('+', u16::MAX as usize + 1)
-            .collect();
-
-        let instructions = eval_instr(&instr_str)
-            .expect("Unreachable")
-            .encode_run_length();
-
-        let rle = RLEInstructionSet(Box::new([
-            RLE::new(u16::MAX, Increment),
-            RLE::new(1, Increment),
-            ]));
-
-        assert_eq!(instructions, rle);
         }
     }

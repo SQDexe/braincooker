@@ -1,5 +1,5 @@
 use {
-    anyhow::Result as DynResult,
+    thiserror::Error,
     std::io::{
         stdin,
         stdout,
@@ -12,36 +12,55 @@ use {
     crate::{
         eval::*,
         tape::*,
-        types::*,
         utils::*
         }
     };
 
+
+/* Run's execution result type */
+#[derive(PartialEq, Debug, Error)]
+pub enum RunError {
+    #[error("A problem occured while writing to the output")]
+    Write,
+    #[error("A problem occured while flushing the output")]
+    Flush,
+    #[error("A problem occured while reading from the input")]
+    Read
+    }
+
+
 /* The Interpreter container for running code */
-pub struct Interpreter<T, U> {
+pub struct Interpreter<T = u16, U = u8> {
     tape: Tape<T, U>,
     output: BufWriter<Box<dyn Write>>,
     input: BufReader<Box<dyn Read>>,
     read_buffer: String,
-    display_mode: DisplayMode
+    display_mode: DisplayMode,
+    debug_display: bool
     }
 
-impl<T: TapePointer, U: TapeCell> Default for Interpreter<T, U> {
+
+impl<T, U> Default for Interpreter<T, U>
+where T: TapePointer, U: TapeCell {
     /* The default Interpreter settings */
     fn default() -> Self {
-        InterpreterBuilder::new()
+        Interpreter::builder()
             .build()
         }
     }
 
+
 /* Trait for generic ability to run the Interpreter */
 pub trait InterpRun {
-    fn run(&mut self, instr: InstructionSet) -> DynResult<()>;
+    fn run(&mut self, instr: InstructionSet) -> Result<(), RunError>;
     }
 
-impl<T: TapePointer, U: TapeCell> InterpRun for Interpreter<T, U> {    
+impl<T, U> InterpRun for Interpreter<T, U>
+where T: TapePointer, U: TapeCell {    
     /* Run the source code's instructions */
-    fn run(&mut self, instr: InstructionSet) -> DynResult<()> {
+    fn run(&mut self, instr: InstructionSet) -> Result<(), RunError> {
+        let instr_len = instr.len();
+
         /* Generate the jump table for loops */
         let jump_table = instr.build_jump_table();
 
@@ -49,10 +68,10 @@ impl<T: TapePointer, U: TapeCell> InterpRun for Interpreter<T, U> {
         let mut instr_ptr: usize = 0;
 
         /* Debug variable */
-        let mut count: usize = 0;
+        let mut count: u64 = 0;
 
         /* Main loop */
-        while instr_ptr < instr.len() {
+        while instr_ptr < instr_len {
             /* Get instruction's type, and execute it */
             match instr[instr_ptr] {
                 Instruction::Right => 
@@ -80,25 +99,45 @@ impl<T: TapePointer, U: TapeCell> InterpRun for Interpreter<T, U> {
             /* Increment instruction pointer with every loop */
             instr_ptr += 1;
 
-            // Debug
-            count += 1;
+            /* Debug information */
+            count += self.debug_display as u64;
             }
 
         /* Last flush before execution ends */
-        self.output.flush()?;
+        if self.output.flush().is_err() {
+            return Err(RunError::Flush);
+            }
 
-        // Debug
-        println!(
-            "\n\nNumber of executed instructions: {}\nNumber of instructions: {}",
-            count, instr.len()
-            );
+        /* Debug information */
+        if self.debug_display {
+            eprintln!(
+"o> ------- INFORMATION ------- <o
+| Number of instructions: {instr_len}
+| Num of executed instructions: {count}
+o> --------------------------- <o"
+                );
+            }
 
         Ok(())
         }
     }
 
-impl<T: TapePointer, U: TapeCell> Interpreter<T, U> { 
-    fn write(&mut self) -> DynResult<()> {
+impl Interpreter<(), ()> {
+    /* Retrive the Builder container */
+    #[inline]
+    pub const fn builder() -> InterpreterBuilder {
+        InterpreterBuilder {
+            output: None,
+            input: None,
+            display_mode: None,
+            debug_display: None
+            }
+        }
+    }
+
+impl<T, U> Interpreter<T, U>
+where T: TapePointer, U: TapeCell { 
+    fn write(&mut self) -> Result<(), RunError> {
         /* Get output data based on display mode, and byte's type */
         let value = self.tape.get();
 
@@ -121,20 +160,26 @@ impl<T: TapePointer, U: TapeCell> Interpreter<T, U> {
             };
         
         /* Write to the output */
-        self.output.write(&bytes)?;
+        if self.output.write(&bytes).is_err() {
+            return Err(RunError::Write);
+            }
 
         Ok(())
         }
 
-    fn read(&mut self) -> DynResult<()> {
+    fn read(&mut self) -> Result<(), RunError> {
         /* Cautionary output flush */
-        self.output.flush()?;
+        if self.output.flush().is_err() {
+            return Err(RunError::Flush);
+            }
 
         /* Try to get input byte, as long as it isn't correct */
         loop {
             /* Clear buffer, and read */
             self.read_buffer.clear();
-            self.input.read_line(&mut self.read_buffer)?;
+            if self.input.read_line(&mut self.read_buffer).is_err() {
+                return Err(RunError::Read);
+                }
 
             /* Check whether is correct, then set, and break */
             if let Ok(new_value) = parse_line(&self.read_buffer) {
@@ -143,7 +188,9 @@ impl<T: TapePointer, U: TapeCell> Interpreter<T, U> {
                 }
         
             /* Information for the user */
-            eprintln!("Please input correct data!");
+            if self.debug_display {
+                eprintln!("Please input correct data!");
+                }
             }
         }
     }
@@ -153,22 +200,14 @@ impl<T: TapePointer, U: TapeCell> Interpreter<T, U> {
 pub struct InterpreterBuilder {
     output: Option<BufWriter<Box<dyn Write>>>,
     input: Option<BufReader<Box<dyn Read>>>,
-    display_mode: Option<DisplayMode>
+    display_mode: Option<DisplayMode>,
+    debug_display: Option<bool>
     }
 
 impl InterpreterBuilder {
-    /* Retrive the Builder container */
-    #[inline]
-    pub const fn new() -> Self {
-        Self {
-            output: None,
-            input: None,
-            display_mode: None
-            }
-        }
-
     /* Build the Interpreter form the Builder container */
-    pub fn build<T: TapePointer, U: TapeCell>(self) -> Interpreter<T, U> {
+    pub fn build<T, U>(self) -> Interpreter<T, U>
+    where T: TapePointer, U: TapeCell  {
         Interpreter {
             tape: Tape::default(),
             output: self.output.unwrap_or(
@@ -178,7 +217,8 @@ impl InterpreterBuilder {
                 BufReader::new(Box::new(stdin().lock()))
                 ),
             read_buffer: String::with_capacity(8),
-            display_mode: self.display_mode.unwrap_or(DisplayMode::Numeric)
+            display_mode: self.display_mode.unwrap_or_default(),
+            debug_display: self.debug_display.unwrap_or_default()
             }
         }
 
@@ -191,8 +231,12 @@ impl InterpreterBuilder {
         self.input = Some(BufReader::new(value));
         self
         }
-    pub fn display_mode(mut self, value: DisplayMode) -> Self {
+    pub const fn display_mode(mut self, value: DisplayMode) -> Self {
         self.display_mode = Some(value);
+        self
+        }
+    pub const fn debug_display(mut self, value: bool) -> Self {
+        self.debug_display = Some(value);
         self
         }
     }
