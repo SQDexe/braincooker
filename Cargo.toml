@@ -11,6 +11,8 @@ license = "Unlicense"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.49", features = ["derive"] }
+env_logger = { version = "0.11.8", default-features = false, features = ["auto-color"] }
+log = { version = "0.4.28", features = ["max_level_trace", "release_max_level_info"] }
 min_max_traits = "0.1.0"
 num-traits = "0.2.19"
 thiserror = "2.0.17"

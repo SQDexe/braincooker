@@ -1,8 +1,12 @@
 use {
-    thiserror::Error,
+    log::{
+        info,
+        warn
+        },
     std::io::{
         stdin,
         stdout,
+        Result as IOResult,
         BufReader,
         BufWriter,
         Write,
@@ -17,26 +21,13 @@ use {
     };
 
 
-/* Run's execution result type */
-#[derive(PartialEq, Debug, Error)]
-pub enum RunError {
-    #[error("A problem occured while writing to the output")]
-    Write,
-    #[error("A problem occured while flushing the output")]
-    Flush,
-    #[error("A problem occured while reading from the input")]
-    Read
-    }
-
-
 /* The Interpreter container for running code */
 pub struct Interpreter<T = u16, U = u8> {
     tape: Tape<T, U>,
     output: BufWriter<Box<dyn Write>>,
     input: BufReader<Box<dyn Read>>,
     read_buffer: String,
-    display_mode: DisplayMode,
-    debug_display: bool
+    display_mode: DisplayMode
     }
 
 
@@ -52,13 +43,13 @@ where T: TapePointer, U: TapeCell {
 
 /* Trait for generic ability to run the Interpreter */
 pub trait InterpRun {
-    fn run(&mut self, instr: InstructionSet) -> Result<(), RunError>;
+    fn run(&mut self, instr: &InstructionSet) -> IOResult<()>;
     }
 
 impl<T, U> InterpRun for Interpreter<T, U>
 where T: TapePointer, U: TapeCell {    
     /* Run the source code's instructions */
-    fn run(&mut self, instr: InstructionSet) -> Result<(), RunError> {
+    fn run(&mut self, instr: &InstructionSet) -> IOResult<()> {
         let instr_len = instr.len();
 
         /* Generate the jump table for loops */
@@ -100,23 +91,16 @@ where T: TapePointer, U: TapeCell {
             instr_ptr += 1;
 
             /* Debug information */
-            count += self.debug_display as u64;
+            count += 1;
             }
 
         /* Last flush before execution ends */
-        if self.output.flush().is_err() {
-            return Err(RunError::Flush);
-            }
+        self.output.write(b"\n")?;
+        self.output.flush()?;
 
         /* Debug information */
-        if self.debug_display {
-            eprintln!(
-"o> ------- INFORMATION ------- <o
-| Number of instructions: {instr_len}
-| Num of executed instructions: {count}
-o> --------------------------- <o"
-                );
-            }
+        info!("Number of instructions: {instr_len}");
+        info!("Number of executed instructions: {count}");
 
         Ok(())
         }
@@ -127,30 +111,34 @@ impl Interpreter<(), ()> {
     #[inline]
     pub const fn builder() -> InterpreterBuilder {
         InterpreterBuilder {
-            output: None,
-            input: None,
             display_mode: None,
-            debug_display: None
+            output: None,
+            input: None
             }
         }
     }
 
 impl<T, U> Interpreter<T, U>
 where T: TapePointer, U: TapeCell { 
-    fn write(&mut self) -> Result<(), RunError> {
+    fn write(&mut self) -> IOResult<()> {
         /* Get output data based on display mode, and byte's type */
         let value = self.tape.get();
 
         /* Get bytes representing the value */
         let bytes = match self.display_mode {
             /* Print as ASCII if value is graphic */
-            /* Unsafe note - unwrap is safe, because guard only allows u8 values */
-            DisplayMode::ASCII if is_ascii_printable(value) => unsafe
-                { vec![value.to_u8().unwrap_unchecked()] },
+            DisplayMode::ASCII if is_ascii_printable(value) => {
+                let converted = value.to_u8(); 
+                /* Unsafe note - unwrap is safe, because guard only allows u8 values */
+                let unwrapped = unsafe {
+                    converted.unwrap_unchecked()
+                    };
+
+                vec![unwrapped]
+                },
             /* Print fallback for ASCII */
             DisplayMode::ASCII => 
-                format!(
-                    "{value:#0size$X}",
+                format!("{value:#0size$X}",
                     size = 2 + 2 * value.to_ne_bytes().as_ref().len()
                     ).into_bytes(),
             /* Print raw numeric value*/
@@ -160,37 +148,29 @@ where T: TapePointer, U: TapeCell {
             };
         
         /* Write to the output */
-        if self.output.write(&bytes).is_err() {
-            return Err(RunError::Write);
-            }
+        self.output.write(&bytes)?;
 
         Ok(())
         }
 
-    fn read(&mut self) -> Result<(), RunError> {
+    fn read(&mut self) -> IOResult<()> {
         /* Cautionary output flush */
-        if self.output.flush().is_err() {
-            return Err(RunError::Flush);
-            }
+        self.output.flush()?;
 
         /* Try to get input byte, as long as it isn't correct */
         loop {
             /* Clear buffer, and read */
             self.read_buffer.clear();
-            if self.input.read_line(&mut self.read_buffer).is_err() {
-                return Err(RunError::Read);
-                }
+            self.input.read_line(&mut self.read_buffer)?;
 
             /* Check whether is correct, then set, and break */
-            if let Ok(new_value) = parse_line(&self.read_buffer) {
+            if let Ok(new_value) = parse_cell_value(&self.read_buffer.trim()) {
                 self.tape.set(new_value);
                 return Ok(());
                 }
         
             /* Information for the user */
-            if self.debug_display {
-                eprintln!("Please input correct data!");
-                }
+            warn!("Please input correct data!");
             }
         }
     }
@@ -198,10 +178,9 @@ where T: TapePointer, U: TapeCell {
 
 /* The Interpreter Builder container */
 pub struct InterpreterBuilder {
-    output: Option<BufWriter<Box<dyn Write>>>,
-    input: Option<BufReader<Box<dyn Read>>>,
     display_mode: Option<DisplayMode>,
-    debug_display: Option<bool>
+    output: Option<BufWriter<Box<dyn Write>>>,
+    input: Option<BufReader<Box<dyn Read>>>
     }
 
 impl InterpreterBuilder {
@@ -210,33 +189,28 @@ impl InterpreterBuilder {
     where T: TapePointer, U: TapeCell  {
         Interpreter {
             tape: Tape::default(),
+            read_buffer: String::with_capacity(8),
+            display_mode: self.display_mode.unwrap_or_default(),
             output: self.output.unwrap_or(
                 BufWriter::new(Box::new(stdout().lock()))
                 ),
             input: self.input.unwrap_or(
                 BufReader::new(Box::new(stdin().lock()))
-                ),
-            read_buffer: String::with_capacity(8),
-            display_mode: self.display_mode.unwrap_or_default(),
-            debug_display: self.debug_display.unwrap_or_default()
+                )
             }
         }
 
     /* Setters */
+    pub const fn display_mode(mut self, value: DisplayMode) -> Self {
+        self.display_mode = Some(value);
+        self
+        }
     pub fn output(mut self, value: Box<dyn Write>) -> Self {
         self.output = Some(BufWriter::new(value));
         self
         }
     pub fn input(mut self, value: Box<dyn Read>) -> Self {
         self.input = Some(BufReader::new(value));
-        self
-        }
-    pub const fn display_mode(mut self, value: DisplayMode) -> Self {
-        self.display_mode = Some(value);
-        self
-        }
-    pub const fn debug_display(mut self, value: bool) -> Self {
-        self.debug_display = Some(value);
         self
         }
     }

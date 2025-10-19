@@ -18,7 +18,7 @@ where T: Copy {
     #[inline]
     pub const fn new(count: u16, value: T) -> Self {
         let count = NonZeroU16::new(count)
-            .expect("Error: Recieved a Zero value"); 
+            .expect("Recieved a Zero value"); 
         
         Self ( count, value )
         }

@@ -34,20 +34,11 @@ pub struct Args {
     /// Action to be executed
     #[command(subcommand)]
     pub command: CMD,
-    /// Possible input sources
-    #[clap(flatten)]
-    pub inputs: InputArgs,
-    /// Whether to show progress informations
-    #[clap(short, long, action)]
-    pub debug_display: bool,
-    /// Whether to prune comment loops
-    #[clap(short, long, value_enum)]
-    pub loop_prune: Option<LoopPrune>
     }
 
 #[derive(Args)]
 #[group(required = true, multiple = false)]
-pub struct InputArgs {
+pub struct Inputs {
     /// Raw source code
     pub input: Option<String>,
     /// Path to a file with source code
@@ -55,10 +46,26 @@ pub struct InputArgs {
     pub input_file: Option<PathBuf>,
     }
 
+#[derive(Args)]
+pub struct Settings {
+    /// Whether to show progress informations
+    #[clap(short = 'D', long, action)]
+    pub debug_display: bool,
+    /// Whether to prune comment loops
+    #[clap(short, long, value_enum)]
+    pub loop_prune: Option<LoopPrune>
+    }
+
 #[derive(Subcommand)]
 pub enum CMD {
     /// Run Brainfuck code with interpreter
     Interp {
+        /// Possible input sources
+        #[clap(flatten)]
+        inputs: Inputs,
+        /// General settings
+        #[clap(flatten)]
+        settings: Settings,
         /// Pointer size, number of cells
         #[clap(short, long, value_enum, default_value_t = DataSize::U16)]
         pointer_size: DataSize,
@@ -71,6 +78,31 @@ pub enum CMD {
         },
     /// Compile Brainfuck code into executable file
     Comp {
+        /// Possible input sources
+        #[clap(flatten)]
+        inputs: Inputs,
+        /// General settings
+        #[clap(flatten)]
+        settings: Settings,
+        /// Output file path
+        #[clap(short, long)]
         output_file: PathBuf
+        }
+    }
+
+
+impl CMD {
+    /* Getters */
+    pub const fn get_inputs(&self) -> &Inputs {
+        match self {
+            CMD::Interp { inputs, .. } => inputs,
+            CMD::Comp { inputs, .. } => inputs
+            }
+        }
+    pub const fn get_settings(&self) -> &Settings {
+        match self {
+            CMD::Interp { settings, .. } => settings,
+            CMD::Comp { settings, .. } => settings
+            }
         }
     }

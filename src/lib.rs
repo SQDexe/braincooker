@@ -8,7 +8,6 @@ mod utils;
 /* Lib re-export */
 pub use {
     interp::{
-        RunError,
         InterpRun,
         Interpreter,
         InterpreterBuilder

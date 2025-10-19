@@ -1,4 +1,5 @@
 use {
+    log::error,
     min_max_traits::Max,
     num_traits::{
         Unsigned,
@@ -9,7 +10,10 @@ use {
         ToPrimitive,
         ToBytes
         },
-    std::string::ToString,
+    std::{
+        string::ToString,
+        process::exit
+        },
     core::{
         fmt::UpperHex,
         iter::repeat_n,
@@ -46,10 +50,13 @@ where T: TapePointer, U: TapeCell  {
     /* Default constructor method */
     fn default() -> Self {
         /* Declaration of size, with additional assertion to halt the execution in case of invalid pointer size */
-        let size = T::MAX
+        let Some(size) = T::MAX
             .to_usize()
             .and_then(|e| e.checked_add(1))
-            .expect("Error: Couldn't safely convert to the intended pointer size");
+        else {
+            error!("Couldn't safely convert to the intended pointer size");
+            exit(1);
+            };
 
         /* Struct declaration */
         Self {
@@ -65,9 +72,9 @@ where T: TapePointer, U: TapeCell  {
     /* Helper function, for quick conversion into a pointer */
     fn ptr(&self) -> usize {
         /* Unsafe note - unwrap is safe, because it was asserted earlier */
+        let ptr = self.pointer.to_usize();
         unsafe {
-            self.pointer.to_usize()
-                .unwrap_unchecked()
+            ptr.unwrap_unchecked()
             }
         }
 

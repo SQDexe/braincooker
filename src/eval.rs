@@ -148,8 +148,9 @@ impl InstructionSet {
             }
 
         /* Unsafe note - it is safe, because it should always exit earlier */
-        unsafe
-            { unreachable_unchecked() }
+        unsafe {
+            unreachable_unchecked()
+            }
         }
 
     /* Function for prunning all "comment loops" which appear one after the other*/
@@ -185,8 +186,13 @@ impl InstructionSet {
                 Instruction::LoopClose => {
                     /* Get coresponding index, current index */
                     /* Unsafe note - unwrap is safe, because the instruction set was sanitised during evaluation */
-                    let (start, end) = unsafe {
-                        (loop_stack.pop().unwrap_unchecked(), i)
+                    let (start, end) = {
+                        let first = loop_stack.pop();
+                        let unwrapped = unsafe {
+                            first.unwrap_unchecked()
+                            };
+
+                        (unwrapped, i)
                         };
 
                     /* Push jumps - opening <-> closing */
